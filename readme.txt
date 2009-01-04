@@ -11,9 +11,6 @@ WP-FacebookConnect adds Facebook functionality to Wordpress using the
 Facebook Connect APIs.  It provides single-signon, avatars, and
 newsfeed publication of comments.
 
-It can be obtained from
-http://svn.facebook.com/svnroot/platform/plugins/wp-fbconnect/.
-
 == Installation ==
 
  1. Copy the plugin to wp-content/plugins/wp-fbconnect under the
