@@ -5,7 +5,6 @@
   padding-top: 6px;
   margin-left: 9px;
   padding-left: 9px;
-  border-left: 1px dashed grey;
 }
 
 .fbc_profile_pic {
@@ -20,9 +19,11 @@
   padding-top: 10px;
   border: gray dotted 1px;
   background: white;
-  position: absolute;
-  right: 0;
-  top: 0;
   width: 175px;
 }
 
+.fbc_loginstate_top {
+  position: absolute;
+  right: 0;
+  top: 0;
+}

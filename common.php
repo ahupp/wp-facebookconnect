@@ -117,7 +117,7 @@ function get_wpuid_by_fbuid($fbuid) {
 define('FBC_ERROR_NO_FB_SESSION', -2);
 define('FBC_ERROR_USERNAME_EXISTS', -1);
 
-function fbc_login_if_necessary() {
+function fbc_login_if_necessary($allow_link=false) {
   $fbuid = fbc_facebook_client()->get_loggedin_user();
   if ($fbuid) {
     $wpuid = fbc_fbuser_to_wpuser($fbuid);
@@ -126,7 +126,7 @@ function fbc_login_if_necessary() {
 
       $user = wp_get_current_user();
       $wpuid = $user->ID;
-      if ($wpuid) {
+      if ($wpuid && $allow_link) {
         // User already has a wordpress account, link to this facebook account
         update_usermeta($wpuid, 'fbuid', "$fbuid");
       } else {
@@ -167,6 +167,10 @@ function fbc_insert_user($fbuid) {
                                               array('name',
                                               'proxied_email',
                                               'profile_url'));
+
+  if ($userinfo === null) {
+    error_log('wp-fbconnect: empty query result for user ' . $fbuid);
+  }
 
   $userinfo = $userinfo[0];
 

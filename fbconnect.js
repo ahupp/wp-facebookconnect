@@ -1,16 +1,32 @@
 
-FBConnect = {
+var FBConnect = {
+
+  /*
+   * If this value is true alert boxes will be raised when various
+   * types of configuration errors are detected.
+   */
+  debugVerbose : (window.location.href.indexOf('fbc_verbose_debug') != -1),
+
+  initialized : false,
 
   init : function(api_key, plugin_path,
                   template_bundle_id, home_url,
                   wp_user, app_config) {
 
     if (!api_key) {
-        FBConnect.error("api_key is not set");
+      FBConnect.error("api_key is not set");
     }
 
     if (!plugin_path) {
-        FBConnect.error("plugin path not provided");
+      FBConnect.error("plugin path not provided");
+    }
+
+    // Check for properly configured template - note this test fails in IE!
+    if (this.debugVerbose) {
+      var html_tag = document.getElementsByTagName('html').item(0);
+      if (html_tag.getAttribute('xmlns:fb') === null) {
+        FBConnect.error('xmlns:fb not defined on html tag - check your templates');
+      }
     }
 
     FBConnect.home_url = home_url || "/";
@@ -21,6 +37,7 @@ FBConnect = {
 
     FB.init(api_key, plugin_path + "xd_receiver.php", app_config);
 
+    FBConnect.initialized = true;
   },
 
   appconfig_reload : {
@@ -54,24 +71,35 @@ FBConnect = {
       return;
     }
 
-    /* This is a bit of a hack.  The default theme gives the submit
-       button an id of "submit".  This causes it to overwrite the
-       .submit() function on the form.  The solution is to delete the
-       submit button and recreate it with a different id.
-       */
-    var orig_submit = ge("submit");
     var comment_form = ge('commentform');
+    if (!comment_form) {
+      FBConnect.error('unable to locate id=commentform');
+      return;
+    }
 
-    subbutton = document.createElement("input");
-    subbutton.setAttribute('name', 'fbc-submit-hack');
-    subbutton.setAttribute("type", "submit");
+    var orig_submit = ge('submit');
+    if (!orig_submit) {
+      FBConnect.error('failed to find comment submit button, maybe it has a new id?');
+      return;
+    }
+
+    /* This is a bit of a hack. The default theme gives the submit
+     button an id of "submit". This causes it to overwrite the
+     .submit() function on the form. The solution is to delete the
+     submit button and recreate it with a different id. See
+     http://jibbering.com/faq/names/ for more info on why this is
+     bad.  */
+
+    var subbutton = document.createElement('input');
+    subbutton.setAttribute('name', 'fbc_submit_hack');
+    subbutton.setAttribute('type', 'submit');
+
     comment_form.appendChild(subbutton);
 
     orig_submit.parentNode.replaceChild(subbutton, orig_submit);
 
     subbutton.onclick = function () {
-      FBConnect.show_comment_feedform();
-      return false;
+      return FBConnect.show_comment_feedform();
     };
   },
 
@@ -85,13 +113,25 @@ FBConnect = {
     };
 
     var comment_text = '';
-    var comment = ge('comment');
-    if (comment) {
-      comment_text = comment.value;
+
+    var commentform = ge('commentform');
+    if (commentform) {
+      // if this isn't present somethign is seriously wrong
+      var comment_box = commentform.comment;
+      if (comment_box) {
+        comment_text = comment_box.value;
+      } else {
+        FBConnect.error('unable to locate comment textarea');
+        return true;
+      }
+    } else {
+      FBConnect.error('unable to locate comment form, expected id=commentform');
+      return true;
     }
 
     if (comment_text.trim().length === 0) {
-      return false;
+      // allow normal submit to complete
+      return true;
     }
 
     var body_general = FBConnect.make_body_general(comment_text);
@@ -103,8 +143,10 @@ FBConnect = {
                               null, // story_size
                               FB.RequireConnect.promptConnect, // require_connect
                               function() {
-                                ge('commentform').submit();
+                                commentform.submit();
                               });
+
+    // submit handled by showFeedDialog
     return false;
 
   },
@@ -124,13 +166,13 @@ FBConnect = {
     return "<fb:pronoun capitalize=\'true\' useyou=\'false\' uid=\'actor\' /> wrote: \"" + comment_clip + "\"";
   },
 
-  error : function() {
-    FB.FBDebug.writeLine.call(arguments);
-  },
-
-  log : function() {
-    FB.FBDebug.writeLine.call(arguments);
+  error : function(msg) {
+    if (FBConnect.debugVerbose) {
+      var emsg = 'Error: ' + msg;
+      alert(emsg);
+    }
   }
+
 };
 
 // end FBConnect
@@ -138,7 +180,6 @@ FBConnect = {
 function fbc_onlogout_noauto() {
   fbc_set_visibility_by_class('fbc_hide_on_login', '');
   fbc_set_visibility_by_class('fbc_hide_on_logout', 'none');
-  // TODO: feedform disable
 }
 
 
@@ -146,19 +187,7 @@ function fbc_onlogin_noauto() {
 
   fbc_set_visibility_by_class('fbc_hide_on_login', 'none');
   fbc_set_visibility_by_class('fbc_hide_on_logout', '');
-
-//   fbc_remove(ge('fbc_login'));
-
-//   var userlink = ge('fbc_userlink');
-//   if (userlink) {
-//     userlink.setAttribute('uid', FB.Facebook.apiClient.get_session().uid);
-//     userlink.setAttribute('usenetwork', 'false');
-//     FB.XFBML.Host.addElement(new FB.XFBML.UserLink(userlink));
-//   } // if false, probably already happened
-
-//   ge('fbc_logged_in').style.visibility = '';
-
-  fbconnect.setup_feedform();
+  FBConnect.setup_feedform();
 }
 
 function fbc_set_visibility_by_class(cls, vis) {
@@ -172,4 +201,3 @@ function fbc_set_visibility_by_class(cls, vis) {
 function ge(elem) {
   return document.getElementById(elem);
 }
-

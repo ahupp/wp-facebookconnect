@@ -38,6 +38,12 @@ function fbc_get_fbconnect_user() {
   return fbc_facebook_client()->get_loggedin_user();
 }
 
+function fbc_login_header($login_state, $fbuid, $wpuid) {
+  if (FBC_DEBUG_LOGIN_HEADER) {
+    header("X-FBC-Login: $login_state fbuid=$fbuid, wpuid=$wpuid");
+  }
+}
+
 function fbc_init_auth() {
 
   $fbuid = fbc_facebook_client()->get_loggedin_user();
@@ -45,18 +51,22 @@ function fbc_init_auth() {
   $assoc_fbuid = fbc_get_fbuid($user->ID);
 
   if ($assoc_fbuid) {
-    if ($fbuid === $assoc_fbuid) {
+    if ($fbuid == $assoc_fbuid) {
        // user is already logged in to both
+      fbc_login_header('logged in', $fbuid, $user->ID);
       return;
     } else {
       //wp session, no fbsession = logout of wp and reload page
       // or, user is logged in under a different fb account
       wp_logout();
       header('Location: ' . $_SERVER['REQUEST_URI']);
+      fbc_login_header('logging user out assoc='. $assoc_fbuid,
+                       $fbuid, $user->ID);
       exit();
     }
   } else {
      if ($user->ID) {
+       fbc_login_header('non-facebook user', $fbuid, $user->ID);
        // wpuser not associated w/ fb.  do nothing
        return;
      } else if($fbuid) {
@@ -65,8 +75,12 @@ function fbc_init_auth() {
        if ($res > 0) {
          $wp_uid = fbc_fbuser_to_wpuser($res);
          wp_set_current_user($wp_uid);
+         fbc_login_header('login sucessful', $fbuid, $wp_uid);
+       } else {
+         fbc_login_header('login error ' . $res, $fbuid, $user->ID);
        }
      } else {
+       fbc_login_header('anonymous', 0, 0);
        // neither facebook nor wordpress, do nothing
        return;
      }
@@ -78,17 +92,6 @@ function fbc_init() {
   if (fbc_is_configured()) {
 
     add_action('init', 'fbc_init_auth');
-
-    /* Adds core and wp-fbconnect css to page.  Also responsible for
-       setting up onloads that initialize fbconnect on the page
-    */
-    add_action('wp_head', 'fbc_header');
-
-    /* Similar to fbc_header, but includes the js at the top of the page
-     as well.  This is necessary becaue there does not appear to be a
-     footer hook on the login page.
-    */
-    add_action('login_head', 'fbc_login_head');
 
     /* Includes any necessary js in the page, registers onload handlers,
        and prints the absolutely positioned "Welcome, username" div.
@@ -194,7 +197,6 @@ function fbc_get_comment_author_url($url) {
   } else {
     return $url;
   }
-
 }
 
 function fbc_get_comment_author($author) {
@@ -206,7 +208,16 @@ function fbc_get_comment_author($author) {
   if ($comment->user_id) {
     $user = get_userdata($comment->user_id);
     if ($user) {
-      return $user->display_name;
+      if ($fbuid = fbc_get_fbuid($comment->user_id)) {
+        // Wrap in fb:name.  This helps if the name wasn't populated
+        // correctly on initial login
+        return
+          '<fb:name linked="false" useyou="false" uid="' . $fbuid . '">' .
+          $user->display_name .
+          '</fb:name>';
+      } else {
+        return $user->display_name;
+      }
     } else {
       // This probably means the account was deleted.
       // Should it says something like "Unknown user" or "deleted account"?
@@ -337,27 +348,16 @@ function this_plugin_path() {
   return get_option('siteurl').'/'. PLUGINDIR .'/' . array_pop($path);
 }
 
-function fbc_require_static() {
+function fbc_render_static_resource() {
   $plugin_dir = this_plugin_path() . '/';
-  $css = $plugin_dir . 'fbconnect.css';
 
-  $connect_js = $plugin_dir . 'fbconnect.js';
+  $featureloader =
+    'http://static.ak.connect.facebook.com/js/api_lib/v0.4/FeatureLoader.js.php';
 
-  $featureloader = 'http://static.ak.connect.facebook.com/js/api_lib/v0.4/FeatureLoader.js.php';
-
-  echo  <<<EOF
-<!-- fbc_header -->
-
-<link type="text/css" rel="stylesheet"
- href="$css"></link>
-
-<script
- src="$featureloader"
- type="text/javascript"></script>
-
-<script src="$connect_js" type="text/javascript"></script>
-
-<!-- end fbc_header -->
+  return  <<<EOF
+<link type="text/css" rel="stylesheet" href="$plugin_dir/fbconnect.css"></link>
+<script src="$featureloader" type="text/javascript"></script>
+<script src="$plugin_dir/fbconnect.js" type="text/javascript"></script>
 EOF;
 
 }
@@ -377,17 +377,9 @@ function fbc_register_init($app_config='reload') {
                               $bundle_id,
                               $site_url,
                               $user->ID,
-                              $app_config));
+                              $app_config),
+                      $prepend=true);
 
-}
-
-function fbc_header() {
-
-  fbc_update_facebook_data();
-
-  fbc_require_static();
-
-  fbc_register_init();
 }
 
 function _fbc_flush_footer_js() {
@@ -404,13 +396,26 @@ EOF;
 }
 
 function fbc_footer() {
-  if (FBC_USER_PROFILE_WINDOW) {
-    echo fbc_render_login_state();
+
+  fbc_update_facebook_data();
+
+  fbc_register_init();
+
+  echo fbc_render_static_resource();
+
+  /*
+    Only render this if it hasn't already been done elsewhere.
+   */
+  if (FBC_USER_PROFILE_WINDOW &&
+      empty($GLOBALS['FBC_HAS_RENDERED_LOGIN_STATE'])) {
+    echo '<div class="fbc_loginstate_top">'.
+      fbc_render_login_state() .
+      '</div>';
   }
 
   echo _fbc_flush_footer_js();
 
-  fbc_debug_info();
+  echo fbc_render_debug_info();
 }
 
 /*
@@ -422,29 +427,30 @@ function fbc_display_login_state() {
 }
 
 function fbc_login_form() {
+  echo fbc_render_static_resource();
   echo render_fbconnect_button('FBConnect.redirect_home()');
+
+  // The 'none' config prevents unnessary reloads on logout
+  fbc_register_init($appconfig='none');
 
   if ($_GET['loggedout']) {
     /* Discussed in
      http://wiki.developers.facebook.com/index.php/Authenticating_Users_on_Facebook
    */
-
-    // The 'none' config prevents unnessary reloads on logout
-    fbc_register_init($appconfig='none');
     fbc_footer_register('FBConnect.logout();');
 
-    echo _fbc_flush_footer_js();
   }
 
+  echo _fbc_flush_footer_js();
 }
 
 /*
  * Show debug info, if available.
  */
-function fbc_debug_info() {
+function fbc_render_debug_info() {
   if (!empty($GLOBALS['FBC_DEBUGINFO'])) {
     $dbg = $GLOBALS['FBC_DEBUGINFO'];
-    echo <<<EOF
+    return <<<EOF
 <pre>
 $dbg
 </pre>
@@ -453,6 +459,8 @@ EOF;
 }
 
 function fbc_render_login_state() {
+  global $FBC_HAS_RENDERED_LOGIN_STATE;
+  $FBC_HAS_RENDERED_LOGIN_STATE = true;
 
   $fbuid = fbc_get_fbconnect_user();
   if (!$fbuid) {
@@ -468,6 +476,7 @@ function fbc_render_login_state() {
 Welcome, <fb:userlink shownetwork="false" uid="%d"></fb:userlink>
 <br/>
 <a onclick="FBConnect.logout(); return false" href="#">Logout of Facebook</a>
+<div style="clear: both"></div>
 </div>
 ', $fbuid, $fbuid);
 }
@@ -545,18 +554,6 @@ function fbc_get_avatar($avatar, $id_or_email, $size, $default) {
   }
 }
 
-function fbc_get_userinfo($wpuid) {
-  $fbuid = fbc_get_fbuid($wpuid);
-  if (!$fbuid) {
-    return null;
-  }
-
-  $userinfo = fbc_api_client()->users_getInfo(array($fbuid),
-                                              array('name'));
-
-  return $userinfo[0];
-}
-
 function fbc_register_templates($force=false) {
 
   $bundle_id = get_option(FBC_BUNDLE_OPTION);
@@ -580,22 +577,19 @@ function fbc_register_templates($force=false) {
 
 }
 
-/*
- * Facebook will test the callback url to see that the
- * xd_receiver contains it. We'll automatically
- * set the callback url on the app so the user doesn't have to.
+/* automatically set the callback url on the app so the user doesn't
+ * have to.
  */
 function fbc_set_callback_url() {
+  $current_props = fbc_api_client()->admin_getAppProperties(array('callback_url'));
+  if (!empty($current_props['callback_url'])) {
+    return;
+  }
 
-  $api_client = $facebook->api_client;
-
-  // the plugin path becomes the callback url
-  // because it is the path for the xd_receiver
-  $plugin_path = this_plugin_path() . '/';
-
-  $ret = fbc_api_client()->admin_setAppProperties(array('callback_url' => $plugin_path));
-
-  return $ret;
+  $proto = !empty($_SERVER['HTTPS']) ? 'https://' : 'http://';
+  $server_root =  $proto . $_SERVER['SERVER_NAME'];
+  $properties = array('callback_url' => $server_root);
+  return fbc_api_client()->admin_setAppProperties($properties);
 }
 
 
@@ -605,12 +599,16 @@ function fbc_set_callback_url() {
  * fbc_footer_register('some_javascript_function();');
  *
  */
-function fbc_footer_register($js) {
+function fbc_footer_register($js, $prepend=false) {
   global $onloadJS;
   if (!$onloadJS) {
     $onloadJS = array();
   }
-  $onloadJS[] = $js;
+  if ($prepend) {
+    array_unshift($onloadJS, $js);
+  } else {
+    $onloadJS[] = $js;
+  }
 }
 
 
@@ -692,10 +690,6 @@ function fbc_update_message($message) {
   return <<<EOF
 <div class="updated"><p><strong>$message</strong></p></div>
 EOF;
-}
-
-function fbc_login_head() {
-  fbc_require_static();
 }
 
 
