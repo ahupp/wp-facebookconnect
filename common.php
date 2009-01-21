@@ -12,8 +12,11 @@ if (file_exists($root.'/wp-load.php')) {
 }
 
 require_once($root . '/wp-includes/registration.php');
-require_once('facebook-client/facebook.php');
 
+if (!class_exists('Facebook')) {
+  // prevent fatal due to multiple inclusions.
+  require_once('facebook-client/facebook.php');
+}
 
 function _fbc_make_client() {
   return new Facebook(get_option(FBC_APP_KEY_OPTION),
