@@ -184,11 +184,13 @@ function fbc_insert_user($fbuid) {
     'user_login' => $fbusername,
     'display_name' => fbc_get_displayname($userinfo),
     'user_url' => fbc_make_public_url($userinfo),
-    'user_email' => $userinfo['proxied_email']
+    'user_email' => $userinfo['proxied_email'],
   );
 
   $wpuid = wp_insert_user($userdata);
   if($wpuid) {
+    wp_insert_user(array('ID' => $wpuid,
+                         'role' => 'subscriber'));
     update_usermeta($wpuid, 'fbuid', "$fbuid");
   }
 

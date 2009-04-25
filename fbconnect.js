@@ -78,29 +78,41 @@ var FBConnect = {
     }
 
     var orig_submit = ge('submit');
-    if (!orig_submit) {
-      FBConnect.error('failed to find comment submit button, maybe it has a new id?');
+    if (orig_submit && orig_submit.getAttribute('name') === 'submit') {
+      /* This is a bit of a hack. The default theme gives the submit
+       button an id and name of "submit". This causes it to overwrite
+       the .submit() function on the form. The solution is to delete
+       the submit button and recreate it with a different id. See
+       http://jibbering.com/faq/names/ for more info on why this is
+       bad.  */
+
+      var subbutton = document.createElement('input');
+      subbutton.setAttribute('name', 'fbc_submit_hack');
+      subbutton.setAttribute('type', 'submit');
+
+      // restore the origional name
+      subbutton.setAttribute('value', 'Submit Comment');
+
+      comment_form.appendChild(subbutton);
+
+      orig_submit.parentNode.replaceChild(subbutton, orig_submit);
+
+    }
+
+    /*
+     * This is pretty terrible but I don't have a better option for
+     * detecting a callable on IE since typeof(comment_form.submit)
+     * returns object and 'call' in comment_form.submit is false.
+     */
+    if (comment_form.submit.nodeType) {
+      FBConnect.error('unable to find .submit() on commentform');
       return;
     }
 
-    /* This is a bit of a hack. The default theme gives the submit
-     button an id of "submit". This causes it to overwrite the
-     .submit() function on the form. The solution is to delete the
-     submit button and recreate it with a different id. See
-     http://jibbering.com/faq/names/ for more info on why this is
-     bad.  */
-
-    var subbutton = document.createElement('input');
-    subbutton.setAttribute('name', 'fbc_submit_hack');
-    subbutton.setAttribute('type', 'submit');
-
-    comment_form.appendChild(subbutton);
-
-    orig_submit.parentNode.replaceChild(subbutton, orig_submit);
-
-    subbutton.onclick = function () {
+    comment_form.onsubmit = function() {
       return FBConnect.show_comment_feedform();
-    };
+    }
+
   },
 
   show_comment_feedform : function() {
@@ -116,7 +128,7 @@ var FBConnect = {
 
     var commentform = ge('commentform');
     if (commentform) {
-      // if this isn't present somethign is seriously wrong
+      // if this isn't present something is seriously wrong
       var comment_box = commentform.comment;
       if (comment_box) {
         comment_text = comment_box.value;
@@ -129,7 +141,7 @@ var FBConnect = {
       return true;
     }
 
-    if (comment_text.trim().length === 0) {
+    if (comment_text.length === 0) {
       // allow normal submit to complete
       return true;
     }
