@@ -397,6 +397,15 @@ EOF;
 
 function fbc_footer() {
 
+  /*
+    Normally this div is inserted by javascript via document.write(),
+    but for XML documnts (XHTML) this fails.  Workaround by including
+    the div at page generation time.
+   */
+  echo
+    '<div style="position: absolute; top: -10000px; left: -10000px; '.
+    ' width: 0px; height: 0px;" id="FB_HiddenContainer"></div>';
+
   fbc_update_facebook_data();
 
   fbc_register_init();
