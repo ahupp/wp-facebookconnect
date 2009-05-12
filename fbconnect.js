@@ -146,36 +146,21 @@ var FBConnect = {
       return true;
     }
 
-    var body_general = FBConnect.make_body_general(comment_text);
-
     FB.Connect.showFeedDialog(FBConnect.template_bundle_id,
                               template_data,
                               null, // template_ids
-                              body_general,
-                              null, // story_size
+                              null, // body_general
+                              null, // story_size (deprecated)
                               FB.RequireConnect.promptConnect, // require_connect
                               function() {
                                 commentform.submit();
-                              });
+                              },
+                              'Your comment: ',
+                              {value: comment_text});
 
     // submit handled by showFeedDialog
     return false;
 
-  },
-
-  /*
-   * Generates FBML for the body of a newsfeed story.  The story looks like:
-   *
-   * Sally wrote: "some insightful comment"
-   */
-  make_body_general : function(comment) {
-    var words = comment.split(' ');
-    if (words.length > 50) {
-      words = words.slice(0, 50);
-      words.push('...');
-    }
-    var comment_clip = words.join(' ');
-    return "<fb:pronoun capitalize=\'true\' useyou=\'false\' uid=\'actor\' /> wrote: \"" + comment_clip + "\"";
   },
 
   error : function(msg) {
