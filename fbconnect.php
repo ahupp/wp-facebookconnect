@@ -344,8 +344,8 @@ EOF;
 }
 
 function this_plugin_path() {
-  $path = explode("/", dirname(__FILE__));
-  return get_option('siteurl').'/'. PLUGINDIR .'/' . array_pop($path);
+  $path = basename(dirname(__FILE__));
+  return get_option('siteurl').'/'. PLUGINDIR .'/' . $path;
 }
 
 function fbc_render_static_resource() {
