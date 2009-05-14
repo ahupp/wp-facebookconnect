@@ -23,7 +23,7 @@ A minimal amount of theme integration is necessary. Open the
 'comment.php' file in the theme and add the following line where the
 Connect login button should be inserted:
 
-  `<?php do_action('fbc_display_login_button') ?>`
+  `<?php do_action('fbc_display_login_button') ?> `
 
 The reason for calling fbc_comment_login via do_action instead of
 directly is to avoid spewing errors if the plugin is disabled.  It
