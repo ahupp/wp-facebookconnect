@@ -644,8 +644,10 @@ function fbc_update_facebook_data($force=false) {
   }
 
   try {
-    $userinfo = fbc_anon_api_client()->users_getInfo(array_keys($fbuid_to_wpuid),
-                                                array('name', 'profile_url'));
+    $userinfo = fbc_anon_api_client()->users_getInfo(
+      array_keys($fbuid_to_wpuid),
+      fbc_userinfo_keys());
+
   } catch(Exception $e) {
     return -1;
   }
@@ -653,14 +655,10 @@ function fbc_update_facebook_data($force=false) {
   $userinfo_by_fbuid = array();
   foreach($userinfo as $info) {
 
-    $fbuid = $info['uid'];
-    $wpuid = $fbuid_to_wpuid[$fbuid];
-    $name = fbc_get_displayname($info);
-    $url = fbc_make_public_url($info);
+    $wpuid = $fbuid_to_wpuid[$info['uid']];
 
-    $userdata = array('ID' => $wpuid,
-                      'display_name' => $name,
-                      'user_url' => $url);
+    $userdata = fbc_userinfo_to_wp_user($info);
+    $userdata['ID'] = $wpuid;
 
     wp_update_user($userdata);
   }

@@ -160,13 +160,29 @@ function fbc_fbuser_to_wpuser($fbuid) {
   return get_user_by_meta('fbuid', $fbuid);
 }
 
+function fbc_userinfo_to_wp_user($userinfo) {
+  return array(
+    'display_name' => fbc_get_displayname($userinfo),
+    'user_url' => fbc_make_public_url($userinfo),
+    'user_email' => $userinfo['proxied_email'],
+    'first_name' => $userinfo['first_name'],
+    'last_name' => $userinfo['last_name'],
+  );
+
+}
+
+function fbc_userinfo_keys() {
+  return array('name',
+               'first_name',
+               'last_name',
+               'proxied_email',
+               'profile_url');
+}
 
 function fbc_insert_user($fbuid) {
 
   $userinfo = fbc_anon_api_client()->users_getInfo(array($fbuid),
-                                              array('name',
-                                              'proxied_email',
-                                              'profile_url'));
+                                                   fbc_userinfo_keys());
 
   if ($userinfo === null) {
     error_log('wp-fbconnect: empty query result for user ' . $fbuid);
@@ -179,17 +195,13 @@ function fbc_insert_user($fbuid) {
     return FBC_ERROR_USERNAME_EXISTS;
   }
 
-  $userdata = array(
-    'user_pass' => wp_generate_password(),
-    'user_login' => $fbusername,
-    'display_name' => fbc_get_displayname($userinfo),
-    'user_url' => fbc_make_public_url($userinfo),
-    'user_email' => $userinfo['proxied_email'],
-  );
+  $userdata = fbc_userinfo_to_wp_user($userinfo);
+  $userdata['user_pass'] = wp_generate_password();
+  $userdata['user_login'] = $fbusername;
 
   $wpuid = wp_insert_user($userdata);
   if($wpuid) {
-    wp_insert_user(array('ID' => $wpuid,
+    wp_update_user(array('ID' => $wpuid,
                          'role' => 'subscriber'));
     update_usermeta($wpuid, 'fbuid', "$fbuid");
   }
