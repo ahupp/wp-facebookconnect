@@ -590,14 +590,14 @@ function fbc_register_templates($force=false) {
  * have to.
  */
 function fbc_set_callback_url() {
-  $current_props = fbc_api_client()->admin_getAppProperties(array('callback_url'));
-  if (!empty($current_props['callback_url'])) {
+  $current_props = fbc_api_client()->admin_getAppProperties(array('connect_url'));
+  if (!empty($current_props['connect_url'])) {
     return;
   }
 
   $proto = !empty($_SERVER['HTTPS']) ? 'https://' : 'http://';
   $server_root =  $proto . $_SERVER['SERVER_NAME'];
-  $properties = array('callback_url' => $server_root);
+  $properties = array('connect_url' => $server_root);
   return fbc_api_client()->admin_setAppProperties($properties);
 }
 
