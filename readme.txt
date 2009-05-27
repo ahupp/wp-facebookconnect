@@ -1,16 +1,19 @@
 === WP-FacebookConnect ===
 Requires at least: 2.5
 Tested up to: 2.6
-Stable Tag: 1.1.1
-Version: 1.1.1
+Stable Tag: 1.1.2
+Version: 1.1.2
 Tags: comments, facebook
 Contributors: ahupp
 
 == Description ==
 
 WP-FacebookConnect adds Facebook functionality to Wordpress using the
-Facebook Connect APIs.  It provides single-signon, avatars, and
-newsfeed publication of comments.
+Facebook Connect APIs.  Features include:
+
+ * Single-signon with your Facebook account
+ * Publish comments to the newsfeed
+ * Comment avatars display Facebook profile photos
 
 == Installation ==
 
