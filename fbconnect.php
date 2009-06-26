@@ -482,7 +482,7 @@ function fbc_render_login_state() {
 <div class="fbc_profile_pic">
 <fb:profile-pic uid="%d" facebook-logo="true" size="square"></fb:profile-pic>
 </div>
-Welcome, <fb:userlink shownetwork="false" uid="%d"></fb:userlink>
+Welcome, <fb:name uid="%d" capitalize="true" useyou="false"></fb:name>
 <br/>
 <a onclick="FBConnect.logout(); return false" href="#">Logout of Facebook</a>
 <div style="clear: both"></div>
