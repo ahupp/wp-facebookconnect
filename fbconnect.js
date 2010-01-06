@@ -10,8 +10,7 @@ var FBConnect = {
   initialized : false,
 
   init : function(api_key, plugin_path,
-                  template_bundle_id, home_url,
-                  wp_user, app_config) {
+                  home_url, wp_user, app_config) {
 
     if (!api_key) {
       FBConnect.error("api_key is not set");
@@ -32,7 +31,6 @@ var FBConnect = {
     FBConnect.home_url = home_url || "/";
 
     FBConnect.plugin_path = plugin_path;
-    FBConnect.template_bundle_id = template_bundle_id;
     FBConnect.wp_user = wp_user;
 
     FB.init(api_key, plugin_path + "xd_receiver.php", app_config);
@@ -65,11 +63,6 @@ var FBConnect = {
    wordpress specific functions
    */
   setup_feedform : function() {
-
-    if (!FBConnect.template_bundle_id) {
-      FBConnect.error("no template id provided");
-      return;
-    }
 
     var comment_form = ge('commentform');
     if (!comment_form) {
@@ -117,13 +110,6 @@ var FBConnect = {
 
   show_comment_feedform : function() {
 
-    var template_data = {
-        'post-url': window.location.href,
-        'post-title': FBConnect.article_title,
-        'blog-name': FBConnect.blog_name,
-        'blog-url': FBConnect.home_url
-    };
-
     var comment_text = '';
 
     var commentform = ge('commentform');
@@ -146,19 +132,24 @@ var FBConnect = {
       return true;
     }
 
-    FB.Connect.showFeedDialog(FBConnect.template_bundle_id,
-                              template_data,
-                              null, // template_ids
-                              null, // body_general
-                              null, // story_size (deprecated)
-                              FB.RequireConnect.promptConnect, // require_connect
-                              function() {
-                                commentform.submit();
-                              },
-                              'Your comment: ',
-                              {value: comment_text});
+    FB.Connect.streamPublish(
+      comment_text, // user_message
+      { 
+        name: FBConnect.article_title,
+        href: window.location.href,
+        caption: 'A post on the blog ' + FBConnect.blog_name,
+        description: "\"" + FBConnect.excerpt + "\""
+      }, // attachment
+      null, // action links
+      null, // target_id
+      'My Comment', // prompt
+      function() {
+        // unconditional
+        commentform.submit();
+      }
+    );
 
-    // submit handled by showFeedDialog
+    // submit handled by streamPublish
     return false;
 
   },

@@ -1,0 +1,9 @@
+
+
+= 1.1.2 -> 1.2.0 =
+
+ - Template bundles have been replaced with the stream.publish API.
+   Any template customizations will need to be updated for this API.
+
+
+

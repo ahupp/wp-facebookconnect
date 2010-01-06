@@ -1,8 +1,8 @@
 === WP-FacebookConnect ===
 Requires at least: 2.5
-Tested up to: 2.6
-Stable Tag: 1.1.2
-Version: 1.1.2
+Tested up to: 2.9.1
+Stable Tag: 1.2.0
+Version: 1.2.0
 Tags: comments, facebook
 Contributors: ahupp
 
@@ -14,6 +14,12 @@ Facebook Connect APIs.  Features include:
  * Single-signon with your Facebook account
  * Publish comments to the newsfeed
  * Comment avatars display Facebook profile photos
+
+What's New:
+
+  v1.2:
+    - Feed stories are now published with the stream.publish API call.
+  Stories also include an excerpt from the post.
 
 == Installation ==
 
@@ -48,6 +54,11 @@ of whether the user is currently logged into WP or not.  It will DTRT.
 
 See config.php and the Settings page for more configuration and
 customization options.
+
+== Upgrades ==
+
+Please see the `CHANGES` file for information that may be useful when
+upgrading from an older release.
 
 == A note on 'nofollow' ==
 

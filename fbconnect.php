@@ -30,7 +30,6 @@ require_once('config.php');
 
 define('FBC_APP_KEY_OPTION', 'fbc_app_key_option');
 define('FBC_APP_SECRET_OPTION', 'fbc_app_secret_option');
-define('FBC_BUNDLE_OPTION', 'fbc_template_bundle_id');
 define('FBC_LAST_UPDATED_CACHE_OPTION', 'fbc_last_updated_cache_option');
 define('FBC_REMOVE_NOFOLLOW_OPTION', 'fbc_remove_nofollow_option');
 
@@ -175,7 +174,7 @@ function fbc_is_app_config_valid($api_key, $secret, &$error) {
   // The following line causes an error in the PHP admin console if
   // you are using php4.
   try { // ATTENTION: This plugin is not compatible with PHP4
-    $api_client->feed_getRegisteredTemplateBundles();
+    $api_client->admin_getAppProperties(array('application_name'));
     $success = true;
   } catch(Exception $e) {
     $success = false;
@@ -231,7 +230,6 @@ function fbc_get_comment_author($author) {
 function fbc_clear_config() {
   update_option(FBC_APP_KEY_OPTION, null);
   update_option(FBC_APP_SECRET_OPTION, null);
-  update_option(FBC_BUNDLE_OPTION, null);
 }
 
 function fbc_is_configured() {
@@ -278,8 +276,6 @@ function fbc_admin_options() {
         update_option(FBC_APP_SECRET_OPTION, $app_secret);
         update_option(FBC_REMOVE_NOFOLLOW_OPTION, $remove_nofollow);
 
-        $force_template_reload = isset($_POST['force_template_reload']);
-        fbc_register_templates($force_template_reload);
         fbc_set_callback_url();
 
         echo fbc_update_message(__('Options saved.', 'mt_trans_domain' ));
@@ -315,10 +311,6 @@ EOF;
   echo fbc_tag_p(__("Secret:", 'mt_trans_domain' ),
                  fbc_tag_input('text', FBC_APP_SECRET_OPTION, $app_secret, 50));
 
-  echo fbc_tag_p(__('Force Reload of Template Bundle from config.php (resets ID):',
-                 'mt_trans_domain'),
-                 fbc_tag_input('checkbox', 'force_template_reload', 'true'));
-
   echo fbc_tag_p(__('Strip nofollow from Facebook comment author links:',
                  'mt_trans_domain'),
                  '<input type="checkbox" name="'.FBC_REMOVE_NOFOLLOW_OPTION .'" '.
@@ -326,8 +318,6 @@ EOF;
 
   echo fbc_tag_p(__('Last user data update:', 'mt_trans_domain'),
                  get_option(FBC_LAST_UPDATED_CACHE_OPTION));
-  echo fbc_tag_p(__('Template Bundle ID:', 'mt_trans_domain'),
-                 get_option(FBC_BUNDLE_OPTION));
 
 ?>
 <hr />
@@ -365,16 +355,14 @@ EOF;
 function fbc_register_init($app_config='reload') {
   $plugin_dir = this_plugin_path() . '/';
 
-  $bundle_id = get_option(FBC_BUNDLE_OPTION);
   $site_url = get_option('siteurl');
 
   $user = wp_get_current_user();
 
-  $init = "FBConnect.init('%s', '%s', '%s', '%s', %d, FBConnect.appconfig_%s);";
+  $init = "FBConnect.init('%s', '%s', '%s', %d, FBConnect.appconfig_%s);";
   fbc_footer_register(sprintf($init,
                               get_option(FBC_APP_KEY_OPTION),
                               $plugin_dir,
-                              $bundle_id,
                               $site_url,
                               $user->ID,
                               $app_config),
@@ -497,13 +485,25 @@ function fbc_comment_form_setup() {
     $blogname = get_option('blogname');
     $article_title = ltrim(wp_title($sep='',$display=false,$seplocation=''));
 
-    fbc_footer_register(sprintf("FBConnect.blog_name = '%s';",
-                           addslashes($blogname)));
-    fbc_footer_register(sprintf("FBConnect.article_title = '%s';",
-                           addslashes($article_title)));
+    global $post;
+
+    $excerpt = strip_tags($post->post_content);
+
+    $excerpt_len = 1024;
+    if (strlen($excerpt) > $excerpt_len) {
+       $excerpt = substr($excerpt, 0, $excerpt_len) . "...";
+    }
+
+    fbc_set_js_var('excerpt', $excerpt);
+    fbc_set_js_var('blog_name', $blogname);
+    fbc_set_js_var('article_title', $article_title);
 
     fbc_footer_register("FBConnect.setup_feedform();");
   }
+}
+
+function fbc_set_js_var($name, $value) {
+  fbc_footer_register('FBConnect.'.$name .'='.json_encode($value));
 }
 
 function fbc_display_login_button($hidden=false) {
@@ -563,28 +563,6 @@ function fbc_get_avatar($avatar, $id_or_email, $size, $default) {
   }
 }
 
-function fbc_register_templates($force=false) {
-
-  $bundle_id = get_option(FBC_BUNDLE_OPTION);
-  if ($bundle_id && !$force) {
-    return $bundle_id;
-  }
-
-  global $fbc_short_story_templates;
-  global $fbc_one_line_stories;
-
-  $bundle_id = fbc_api_client()->feed_registerTemplateBundle(
-                 $fbc_one_line_stories,
-                 $fbc_short_story_templates,
-                 null,
-                 null
-               );
-
-  update_option(FBC_BUNDLE_OPTION, "$bundle_id");
-
-  return $bundle_id;
-
-}
 
 /* automatically set the callback url on the app so the user doesn't
  * have to.
