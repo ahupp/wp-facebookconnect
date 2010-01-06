@@ -1,10 +1,10 @@
 === WP-FacebookConnect ===
 Requires at least: 2.5
 Tested up to: 2.9.1
-Stable Tag: 1.2.0
 Version: 1.2.0
 Tags: comments, facebook
 Contributors: ahupp
+Stable Tag: 1.2.0
 
 == Description ==
 
