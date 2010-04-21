@@ -124,6 +124,8 @@ function fbc_init() {
     */
     add_filter('language_attributes', 'fbc_language_attributes');
 
+    add_action('wp_head', 'fbc_og_head');
+
     /* Setup feedforms and post-specific data.
     */
     add_action('comment_form', 'fbc_comment_form_setup');
@@ -212,7 +214,7 @@ function fbc_get_comment_author($author) {
         // correctly on initial login
         return
           '<fb:name linked="false" useyou="false" uid="' . $fbuid . '">' .
-          $user->display_name .
+          fbc_txt2html($user->display_name) .
           '</fb:name>';
       } else {
         return $user->display_name;
@@ -239,7 +241,45 @@ function fbc_is_configured() {
 }
 
 function fbc_language_attributes($output) {
-  return $output . ' xmlns:fb="http://www.facebook.com/2008/fbml"';
+  return $output .
+    ' xmlns:fb="http://www.facebook.com/2008/fbml" '.
+    ' xmlns:og="http://opengraphprotocol.org/schema/" ';
+}
+
+function fbc_og_head() {
+  if (!is_singular()) {
+    return ;
+  }
+  $title = ltrim(wp_title($sep='',$display=false,$seplocation=''));
+  $name = get_option('blogname');
+  echo
+    '<meta property="og:site_name" content="'.fbc_txt2html($name).'" />'.
+    '<meta property="og:title" content="'.fbc_txt2html($title).'" />';
+}
+
+function fbc_txt2html($raw_str) {
+  return htmlspecialchars($raw_str, ENT_QUOTES, 'UTF-8');
+}
+
+function fbc_render_like() {
+  $permalink = fbc_current_permalink();
+  if (!$permalink) {
+    return '';
+  }
+  $href = urlencode($permalink);
+  return
+     '<iframe src="http://www.facebook.com/plugins/like.php?href='.
+    $href.'" scrolling="no" frameborder="0" '.
+    'style="border:none; overflow:hidden; width:450px; "></iframe>';
+}
+
+function fbc_current_permalink() {
+  if (!is_singular()) {
+    return null;
+  }
+
+  global $wp_query;
+  return get_permalink($wp_query->get_queried_object_id());
 }
 
 /*
@@ -481,6 +521,8 @@ Welcome, <fb:name uid="%d" capitalize="true" useyou="false"></fb:name>
 function fbc_comment_form_setup() {
 
   if (fbc_get_fbconnect_user()) {
+
+    echo fbc_render_like();
 
     $blogname = get_option('blogname');
     $article_title = ltrim(wp_title($sep='',$display=false,$seplocation=''));
