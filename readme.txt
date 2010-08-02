@@ -3,7 +3,7 @@ Requires at least: 2.5
 Tested up to: 2.9.1
 Tags: comments, facebook
 Contributors: ahupp
-Stable Tag: 1.2.1
+Stable Tag: 1.3.1
 
 == Description ==
 
@@ -16,9 +16,14 @@ Facebook Connect APIs.  Features include:
 
 What's New:
 
-  v1.2:
-    - Feed stories are now published with the stream.publish API call.
-  Stories also include an excerpt from the post.
+ 1.3
+ - Add a "Like" button to posts
+ - No longer set user_email because it no longer works, and overwrites
+   user-entered addresses
+
+ 1.2
+ - Template bundles have been replaced with the stream.publish API.
+   Any template customizations will need to be updated for this API.
 
 == Installation ==
 

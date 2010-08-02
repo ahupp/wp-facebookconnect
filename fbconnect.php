@@ -21,7 +21,7 @@ Plugin Name: Facebook Connect
 Author: Adam Hupp
 Author URI: http://hupp.org/adam/
 Description: Integrate Facebook and Wordpress with Facebook Connect.  Provides single-signon, avatars, and newsfeed comment publication.  Requires a <a href="http://www.facebook.com/developers/">Facebook API Key</a> for use.
-Version: 1.0
+Version: 1.3.1
 
 */
 
@@ -217,7 +217,7 @@ function fbc_get_comment_author($author) {
           fbc_txt2html($user->display_name) .
           '</fb:name>';
       } else {
-        return $user->display_name;
+        return fbc_txt2html($user->display_name);
       }
     } else {
       // This probably means the account was deleted.
@@ -723,4 +723,4 @@ EOF;
 // start it up.
 fbc_init();
 
-?>
+

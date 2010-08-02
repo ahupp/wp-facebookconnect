@@ -164,7 +164,6 @@ function fbc_userinfo_to_wp_user($userinfo) {
   return array(
     'display_name' => fbc_get_displayname($userinfo),
     'user_url' => fbc_make_public_url($userinfo),
-    'user_email' => $userinfo['proxied_email'],
     'first_name' => $userinfo['first_name'],
     'last_name' => $userinfo['last_name'],
   );
@@ -175,7 +174,6 @@ function fbc_userinfo_keys() {
   return array('name',
                'first_name',
                'last_name',
-               'proxied_email',
                'profile_url');
 }
 
@@ -196,13 +194,25 @@ function fbc_insert_user($fbuid) {
   }
 
   $userdata = fbc_userinfo_to_wp_user($userinfo);
-  $userdata['user_pass'] = wp_generate_password();
-  $userdata['user_login'] = $fbusername;
+  $userdata += array(
+    'user_pass' => wp_generate_password(),
+
+    /*
+      WP3.0 requires an unique email address for new accounts.  We might
+      not have one, so give it a unique and identifiably fake address.
+    */
+    'user_email' => $fbusername.'@wp-fbconnect.fake',
+    'user_login' => $fbusername,
+    /*
+      In the event this blog is configured to setup new users as
+      admins, don't apply that to fbconnect users.
+     */
+    'role' => 'subscriber'
+  );
 
   $wpuid = wp_insert_user($userdata);
-  if($wpuid) {
-    wp_update_user(array('ID' => $wpuid,
-                         'role' => 'subscriber'));
+  // $wpuid might be an instance of WP_Error
+  if($wpuid && is_integer($wpuid)) {
     update_usermeta($wpuid, 'fbuid', "$fbuid");
   }
 
@@ -210,4 +220,3 @@ function fbc_insert_user($fbuid) {
 }
 
 
-?>
