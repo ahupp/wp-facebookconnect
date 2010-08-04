@@ -1,3 +1,10 @@
+= 1.3.0 -> 2.0.0 =
+ - Upgraded to the new Facebook PHP SDK. The most noticeable change from
+   an administrator standpoint is that it requires the App ID instead of
+   API Key. If all goes well, this should be fetched on the first page
+   load after upgrade. If not, the plugin will continue to try again
+   every hour until it succeeds. It will also attempt to fetch the App ID
+   on every visit to the plugin's settings page. 
 
 = 1.2.0 -> 1.3.0 =
 

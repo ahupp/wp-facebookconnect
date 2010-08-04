@@ -9,11 +9,11 @@ var FBConnect = {
 
   initialized : false,
 
-  init : function(api_key, plugin_path,
+  init : function(app_id, plugin_path,
                   home_url, wp_user, app_config) {
 
-    if (!api_key) {
-      FBConnect.error("api_key is not set");
+    if (!app_id) {
+      FBConnect.error("app_id is not set");
     }
 
     if (!plugin_path) {
@@ -33,8 +33,7 @@ var FBConnect = {
     FBConnect.plugin_path = plugin_path;
     FBConnect.wp_user = wp_user;
 
-    FB.init(api_key, plugin_path + "xd_receiver.php", app_config);
-
+    FB.init({appId: app_id, status: true, cookie: true, xfbml: true });
     FBConnect.initialized = true;
   },
 
@@ -134,7 +133,7 @@ var FBConnect = {
 
     FB.Connect.streamPublish(
       comment_text, // user_message
-      { 
+      {
         name: FBConnect.article_title,
         href: window.location.href,
         caption: 'A post on the blog ' + FBConnect.blog_name,

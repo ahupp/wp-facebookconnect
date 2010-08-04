@@ -22,7 +22,7 @@ This is a cross domain (XD) receiver page. It needs to be placed on your domain 
   http://www.example.com/xd_receiver.php
 -->
  <script
-   src="http://static.ak.connect.facebook.com/js/api_lib/v0.4/XdCommReceiver.debug.js" 
+   src="http://static.ak.connect.facebook.com/js/api_lib/v0.4/XdCommReceiver.debug.js"
    type="text/javascript"></script>
 
 </body>

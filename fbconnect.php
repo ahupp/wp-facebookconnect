@@ -1,5 +1,5 @@
 <?php
-/*  Copyright 2008  Adam Hupp  (email : adam at hupp.org / ahupp at facebook.com)
+/*  Copyright 2008  Adam Hupp (email : adam at hupp.org / ahupp at facebook.com)
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -14,27 +14,32 @@
     You should have received a copy of the GNU General Public License
     along with this program; if not, write to the Free Software
     Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
-*/
+ */
 
 /*
 Plugin Name: Facebook Connect
 Author: Adam Hupp
 Author URI: http://hupp.org/adam/
 Description: Integrate Facebook and Wordpress with Facebook Connect.  Provides single-signon, avatars, and newsfeed comment publication.  Requires a <a href="http://www.facebook.com/developers/">Facebook API Key</a> for use.
-Version: 1.3.1
+Version: 2.0.0
 
-*/
+ */
 
 require_once('common.php');
 require_once('config.php');
+require_once('rtupdate-functions.php');
 
-define('FBC_APP_KEY_OPTION', 'fbc_app_key_option');
 define('FBC_APP_SECRET_OPTION', 'fbc_app_secret_option');
+define('FBC_APP_KEY_OPTION', 'fbc_app_key_option');
 define('FBC_LAST_UPDATED_CACHE_OPTION', 'fbc_last_updated_cache_option');
+define('FBC_LAST_MIGRATE_ATTEMPT_OPTION', 'fbc_last_migrate_attempt_option');
 define('FBC_REMOVE_NOFOLLOW_OPTION', 'fbc_remove_nofollow_option');
+define('FBC_APP_ID_OPTION', 'fbc_app_id_option');
+define('FBC_ENABLE_REALTIME_OPTION', 'fbc_enable_realtime_option');
+define('FBC_ALLOW_USER_STATUS_OPTION', 'fbc_allow_user_status_option');
 
 function fbc_get_fbconnect_user() {
-  return fbc_facebook_client()->get_loggedin_user();
+  return fbc_facebook_client()->getUser();
 }
 
 function fbc_login_header($login_state, $fbuid, $wpuid) {
@@ -45,13 +50,13 @@ function fbc_login_header($login_state, $fbuid, $wpuid) {
 
 function fbc_init_auth() {
 
-  $fbuid = fbc_facebook_client()->get_loggedin_user();
+  $fbuid = fbc_facebook_client()->getUser();
   $user = wp_get_current_user();
   $assoc_fbuid = fbc_get_fbuid($user->ID);
 
   if ($assoc_fbuid) {
     if ($fbuid == $assoc_fbuid) {
-       // user is already logged in to both
+      // user is already logged in to both
       fbc_login_header('logged in', $fbuid, $user->ID);
       return;
     } else {
@@ -60,29 +65,30 @@ function fbc_init_auth() {
       wp_logout();
       header('Location: ' . $_SERVER['REQUEST_URI']);
       fbc_login_header('logging user out assoc='. $assoc_fbuid,
-                       $fbuid, $user->ID);
+        $fbuid, $user->ID);
       exit();
     }
   } else {
-     if ($user->ID) {
-       fbc_login_header('non-facebook user', $fbuid, $user->ID);
-       // wpuser not associated w/ fb.  do nothing
-       return;
-     } else if($fbuid) {
-       // not a wp user, but fb authed = log them in to wp
-       $res = fbc_login_if_necessary();
-       if ($res > 0) {
-         $wp_uid = fbc_fbuser_to_wpuser($res);
-         wp_set_current_user($wp_uid);
-         fbc_login_header('login sucessful', $fbuid, $wp_uid);
-       } else {
-         fbc_login_header('login error ' . $res, $fbuid, $user->ID);
-       }
-     } else {
-       fbc_login_header('anonymous', 0, 0);
-       // neither facebook nor wordpress, do nothing
-       return;
-     }
+    if ($user->ID) {
+      fbc_login_header('non-facebook user', $fbuid, $user->ID);
+      // wpuser not associated w/ fb.  do nothing
+      return;
+    } else if ($fbuid) {
+      // not a wp user, but fb authed = log them in to wp
+      $res = fbc_login_if_necessary();
+      if ($res > 0) {
+        $wp_uid = fbc_fbuser_to_wpuser($res);
+        wp_set_current_user($wp_uid);
+        fbc_save_user_session($wp_uid, fbc_facebook_client()->getSession());
+        fbc_login_header('login sucessful', $fbuid, $wp_uid);
+      } else {
+        fbc_login_header('login error ' . $res, $fbuid, $user->ID);
+      }
+    } else {
+      fbc_login_header('anonymous', 0, 0);
+      // neither facebook nor wordpress, do nothing
+      return;
+    }
   }
 }
 
@@ -94,23 +100,25 @@ function fbc_init() {
 
     /* Includes any necessary js in the page, registers onload handlers,
        and prints the absolutely positioned "Welcome, username" div.
-    */
+     */
     add_action('wp_footer', 'fbc_footer');
 
     /* Adds a "Connect" button to the login form, and handles fbconnect
       logout when a wordpress logout is performed.
-    */
+     */
     add_action('login_form', 'fbc_login_form');
 
     /* Prints fbml with the user's profile pic when that user is a
       facebook connect user.
-    */
+     */
     add_filter('get_avatar', 'fbc_get_avatar', 10, 4);
 
     /*
       Make sure the comment author info is in sync with the db.
-    */
-    add_filter('get_comment_author', 'fbc_get_comment_author');
+     */
+    if (get_option(FBC_ENABLE_REALTIME_OPTION) !== 'true') {
+      add_filter('get_comment_author', 'fbc_get_comment_author');
+    }
     add_filter('get_comment_author_url', 'fbc_get_comment_author_url');
 
     /* Remove nofollow from links back to profile pages */
@@ -121,26 +129,31 @@ function fbc_init() {
     /* Add the xmlns:fb namespace to the page.  This is necessary to be
        stricty correct with xhtml, and more importantly it's necessary for
        xfbml to work in IE.
-    */
+     */
     add_filter('language_attributes', 'fbc_language_attributes');
 
     add_action('wp_head', 'fbc_og_head');
 
     /* Setup feedforms and post-specific data.
-    */
+     */
     add_action('comment_form', 'fbc_comment_form_setup');
+
+    add_action('comment_text', 'fbc_comment_render_footer');
 
     /* Why do this? So you can print the form with
        do_action('fbc_comment_form') and not spew errors if the
        plugin is removed.
-    */
+     */
     add_action('fbc_display_login_state', 'fbc_display_login_state');
     add_action('fbc_display_login_button', 'fbc_display_login_button');
 
+    /* Allow for additional options in the user profile related to status */
+    add_action('show_user_profile', 'fbc_user_profile_extras');
+    add_action('personal_options_update', 'fbc_user_profile_updated');
   }
 
   /* Install the admin menu.
-  */
+   */
   add_action('admin_menu', 'fbc_add_options_to_admin');
 
 }
@@ -149,10 +162,10 @@ function fbc_init() {
 function fbc_add_options_to_admin() {
   if (function_exists('add_options_page')) {
     add_options_page('Facebook Connect',
-                     'Facebook Connect',
-                     8,
-                     __FILE__,
-                     'fbc_admin_options');
+      'Facebook Connect',
+      8,
+      __FILE__,
+      'fbc_admin_options');
   }
 }
 
@@ -160,23 +173,26 @@ function fbc_remove_nofollow($anchor) {
   global $comment;
   // Only remove for facebook comments, since url is trusted
   if ($comment->user_id && fbc_get_fbuid($comment->user_id)) {
-    return preg_replace('/ rel=[\"\'](.*)nofollow(.*?)[\"\']/', ' rel="$1 $2" ', $anchor);
+    return preg_replace('/ rel=[\"\'](.*)nofollow(.*?)[\"\']/',
+      ' rel="$1 $2" ', $anchor);
   }
   return $anchor;
 }
 
 
-function fbc_is_app_config_valid($api_key, $secret, &$error) {
-   $facebook = new Facebook($api_key,
-                             $secret,
-                             false,
-                             'connect.facebook.com');
+function fbc_is_app_config_valid($app_id, $secret, &$error) {
+  $facebook = new Facebook(array(
+    'appId' => $app_id,
+    'secret' => $secret,
+    'cookie' => true
+  ));
 
-  $api_client = $facebook->api_client;
+  $facebook->setSession(null);
   // The following line causes an error in the PHP admin console if
   // you are using php4.
   try { // ATTENTION: This plugin is not compatible with PHP4
-    $api_client->admin_getAppProperties(array('application_name'));
+    $facebook->api(array('method' => 'admin.getAppProperties',
+      'properties' => 'application_name'));
     $success = true;
   } catch(Exception $e) {
     $success = false;
@@ -184,6 +200,32 @@ function fbc_is_app_config_valid($api_key, $secret, &$error) {
   }
 
   return $success;
+}
+
+function fbc_toggle_realtime($enable_realtime, $enable_status) {
+  $facebook = fbc_anon_api_client();
+  $appid = $facebook->getAppId();
+  $url = "$appid/subscriptions";
+  $fields = "name,first_name,last_name,link,email";
+  if ($enable_status) {
+    $fields .= ",feed";
+  }
+  $params = array('object' => 'user',
+    'fields' => $fields,
+    'callback_url' => this_plugin_path() . '/rtcallback.php',
+    'verify_token' => get_verify_token());
+  try {
+    if ($enable_realtime) {
+      $facebook->api($url, 'POST', $params);
+    }
+    else {
+      $facebook->api($url, 'DELETE', array('object' => 'user'));
+    }
+  } catch(Exception $e) {
+    error_log($e->getMessage());
+    return false;
+  }
+  return true;
 }
 
 function fbc_get_comment_author_url($url) {
@@ -206,6 +248,8 @@ function fbc_get_comment_author($author) {
   // normally wordpress will not update the name of logged in comment
   // authors if they change it after the fact.  This hook makes sure
   // we use the most recent name when displaying comments.
+  // We disable this hook if realtime updates are enabled to reduce the
+  // number of API calls made.
   if ($comment->user_id) {
     $user = get_userdata($comment->user_id);
     if ($user) {
@@ -230,14 +274,51 @@ function fbc_get_comment_author($author) {
 }
 
 function fbc_clear_config() {
-  update_option(FBC_APP_KEY_OPTION, null);
+  update_option(FBC_APP_ID_OPTION, null);
   update_option(FBC_APP_SECRET_OPTION, null);
 }
 
 function fbc_is_configured() {
-  $app_key = get_option(FBC_APP_KEY_OPTION);
+  $app_id= get_option(FBC_APP_ID_OPTION);
   $app_secret = get_option(FBC_APP_SECRET_OPTION);
-  return !empty($app_key) && !empty($app_secret);
+  if (!$app_id && $app_secret) {
+    return fbc_migrate_app_key(false);
+  }
+  return $app_id && $app_secret;
+}
+
+function fbc_migrate_app_key($force = true) {
+  $app_key = get_option(FBC_APP_KEY_OPTION);
+  if ($app_key) {
+    return false;
+  }
+  $migrate_attempt_time = get_option(FBC_LAST_MIGRATE_ATTEMPT_OPTION);
+  if (!$force && $migrate_attempt_time &&
+      (time() < $migrate_attempt_time + 3600)) {
+    return false;  // Don't attempt to migrate on every request.
+  }
+  $url = 'http://api.facebook.com/method/fql.query?';
+  $query = 'select app_id from application where api_key="' .
+              $app_key . '"';
+  $params = http_build_query(array('format' => 'json', 'query' => $query));
+  $curl_options = array(CURLOPT_RETURNTRANSFER => true,
+                        CURLOPT_TIMEOUT => 5,
+                        CURLOPT_URL => $url . $params,
+                       );
+  $curl_handle = curl_init();
+  curl_setopt_array($curl_handle, $curl_options);
+  $response = curl_exec($curl_handle);
+  if ($response) {
+    $response_json = json_decode($response);
+    if (is_array($response_json) && count($response_json) === 1) {
+      $app_id = $response_json[0]->app_id;
+      update_option(FBC_APP_ID_OPTION, $app_id);
+      curl_close($curl_handle);
+      return $app_id;
+    }
+  }
+  error_log('wp-fbconnect: failed to migrate app key.');
+  update_option(FBC_LAST_MIGRATE_ATTEMPT_OPTION, time());
 }
 
 function fbc_language_attributes($output) {
@@ -250,7 +331,7 @@ function fbc_og_head() {
   if (!is_singular()) {
     return ;
   }
-  $title = ltrim(wp_title($sep='',$display=false,$seplocation=''));
+  $title = ltrim(wp_title($sep='', $display=false, $seplocation=''));
   $name = get_option('blogname');
   echo
     '<meta property="og:site_name" content="'.fbc_txt2html($name).'" />'.
@@ -268,7 +349,7 @@ function fbc_render_like() {
   }
   $href = urlencode($permalink);
   return
-     '<iframe src="http://www.facebook.com/plugins/like.php?href='.
+    '<iframe src="http://www.facebook.com/plugins/like.php?href='.
     $href.'" scrolling="no" frameborder="0" '.
     'style="border:none; overflow:hidden; width:450px; "></iframe>';
 }
@@ -291,45 +372,84 @@ function fbc_admin_options() {
   $hidden_field_name = 'mt_submit_hidden';
 
   // Read in existing option value from database
-  $app_key = get_option(FBC_APP_KEY_OPTION);
   $app_secret = get_option(FBC_APP_SECRET_OPTION);
+  $app_id = get_option(FBC_APP_ID_OPTION);
+  if (empty($app_id) && !empty($app_secret)) {
+    $app_id = fbc_migrate_app_key(true);
+  }
   $remove_nofollow = get_option(FBC_REMOVE_NOFOLLOW_OPTION);
+  $enable_rtu = get_option(FBC_ENABLE_REALTIME_OPTION);
+  $enable_fbstatus = get_option(FBC_ALLOW_USER_STATUS_OPTION);
+
   if ($remove_nofollow === false) {
     // set default
     $remove_nofollow = 'true';
     update_option(FBC_REMOVE_NOFOLLOW_OPTION, $remove_nofollow);
   }
 
+  if ($enable_rtu === false) {
+    $enable_rtu = 'false';
+    update_option(FBC_ENABLE_REALTIME_OPTION, $enable_rtu);
+  }
+
+  if ($enable_fbstatus === false) {
+    $enable_rtu = 'false';
+    update_option(FBC_ALLOW_USER_STATUS_OPTION, $enable_fbstatus);
+  }
+
   // See if the user has posted us some information
   // If they did, this hidden field will be set to 'Y'
-  if( $_POST[ $hidden_field_name ] == 'Y' ) {
+  if ($_POST[ $hidden_field_name ] == 'Y') {
+    $old_rtu_setting = $enable_rtu;
 
-      // Read their posted value
-      $app_key = $_POST[FBC_APP_KEY_OPTION];
-      $app_secret = $_POST[FBC_APP_SECRET_OPTION];
-      $remove_nofollow = isset($_POST[FBC_REMOVE_NOFOLLOW_OPTION]) ? 'true' : 'false';
+    // Read their posted value
+    $app_secret = $_POST[FBC_APP_SECRET_OPTION];
+    $app_id = $_POST[FBC_APP_ID_OPTION];
+    $remove_nofollow = isset($_POST[FBC_REMOVE_NOFOLLOW_OPTION]) ?
+                              'true' : 'false';
+    $enable_rtu = isset($_POST[FBC_ENABLE_REALTIME_OPTION]) ?
+                              'true' : 'false';
+    $enable_fbstatus = isset($_POST[FBC_ALLOW_USER_STATUS_OPTION]) ?
+                              'true' : 'false';
 
-      $error = null;
-      if (fbc_is_app_config_valid($app_key, $app_secret, $error)) {
-        // Save the posted value in the database
-        update_option(FBC_APP_KEY_OPTION, $app_key);
-        update_option(FBC_APP_SECRET_OPTION, $app_secret);
-        update_option(FBC_REMOVE_NOFOLLOW_OPTION, $remove_nofollow);
+    $error = null;
+    if (fbc_is_app_config_valid($app_id, $app_secret, $error)) {
+      // Save the posted value in the database
+      fbc_toggle_realtime($enable_rtu === 'true', $enable_fbstatus === 'true');
 
-        fbc_set_callback_url();
+      if ($realtime_success) {
+        update_option(FBC_ENABLE_REALTIME_OPTION, $enable_rtu);
+      }
+      update_option(FBC_APP_SECRET_OPTION, $app_secret);
+      update_option(FBC_APP_ID_OPTION, $app_id);
+      update_option(FBC_REMOVE_NOFOLLOW_OPTION, $remove_nofollow);
+      update_option(FBC_ALLOW_USER_STATUS_OPTION, $enable_fbstatus);
 
-        echo fbc_update_message(__('Options saved.', 'mt_trans_domain' ));
-
-      } else {
-        echo fbc_update_message(__("Failed to set API Key.  Error: $error", 'mt_trans_domain' ));
+      fbc_set_callback_url();
+      if ($enable_fbstatus == 'true' && $enable_rtu == 'false') {
+        echo fbc_update_message(__("Options saved. Disabled 'Allow"
+                    . " users to show their Facebook status with their posts'."
+                    . " This feature requires realtime updates to function.".
+                    'mt_trans_domain'));
+        update_option(FBC_ALLOW_USER_STATUS_OPTION, 'false');
+        $enable_fbstatus = false;
+      }
+      else {
+        echo fbc_update_message(__('Options saved.', 'mt_trans_domain'));
       }
 
+    } else {
+      echo fbc_update_message(__("Failed to set API Key.  Error: $error",
+                              'mt_trans_domain'));
     }
 
-    echo '<div class="wrap">';
-    echo "<h2>" . __( 'Facebook Connect Plugin Options', 'mt_trans_domain' ) . "</h2>";
-    $form_action = str_replace('%7E', '~', $_SERVER['REQUEST_URI']);
-    echo <<<EOF
+  }
+
+  echo '<div class="wrap">';
+  echo "<h2>" . __('Facebook Connect Plugin Options', 'mt_trans_domain') .
+      "</h2>";
+  $form_action = str_replace('%7E', '~', $_SERVER['REQUEST_URI']);
+  echo <<<EOF
 <div>
 <br/>To use Facebook Connect you will first need to get a Facebook API Key:
 <ol>
@@ -338,7 +458,7 @@ function fbc_admin_options() {
     field.  This will be seen by users when they sign up for your
     site.</li>
 <li>Submit</li>
-<li>Copy the displayed API Key and Secret into this form.</li>
+<li>Copy the displayed Application ID and Secret into this form.</li>
 <li>Recommended: Upload icon images on the app configuration page.  These images are seen as the icon in newsfeed stories and when the user is registering with your application</li>
 </ol>
 <hr/>
@@ -346,24 +466,33 @@ function fbc_admin_options() {
 EOF;
 
   echo fbc_tag_input('hidden', $hidden_field_name, 'Y');
-  echo fbc_tag_p(__("API Key:", 'mt_trans_domain'),
-                 fbc_tag_input('text', FBC_APP_KEY_OPTION, $app_key, 50));
-  echo fbc_tag_p(__("Secret:", 'mt_trans_domain' ),
-                 fbc_tag_input('text', FBC_APP_SECRET_OPTION, $app_secret, 50));
-
+  echo fbc_tag_p(__("Secret:", 'mt_trans_domain'),
+    fbc_tag_input('text', FBC_APP_SECRET_OPTION, $app_secret, 50));
+  echo fbc_tag_p(__("App ID:", 'mt_trans_domain'),
+    fbc_tag_input('text', FBC_APP_ID_OPTION, $app_id, 50));
   echo fbc_tag_p(__('Strip nofollow from Facebook comment author links:',
-                 'mt_trans_domain'),
-                 '<input type="checkbox" name="'.FBC_REMOVE_NOFOLLOW_OPTION .'" '.
-                 ($remove_nofollow === 'true' ? 'checked' : '') .' value="true" />');
-
+    'mt_trans_domain'),
+  '<input type="checkbox" name="'.FBC_REMOVE_NOFOLLOW_OPTION .'" '.
+  ($remove_nofollow === 'true' ? 'checked' : '') .' value="true" />');
+  echo fbc_tag_p(__('Enable realtime updates:', 'mt_trans_domain'),
+    '<input type="checkbox" name="'. FBC_ENABLE_REALTIME_OPTION .'" '.
+    ($enable_rtu === 'true' ? 'checked' : '') .' value="true" />');
+  echo fbc_tag_p(__(
+    'Allow users to display their latest Facebook status with their '.
+      'posts (users must explicitly opt in on their profile page):',
+      'mt_trans_domain'),
+    '<input type="checkbox" name="'. FBC_ALLOW_USER_STATUS_OPTION .'" '.
+    ($enable_fbstatus === 'true' ? 'checked="checked"' : '') .
+      ' value="true" />');
   echo fbc_tag_p(__('Last user data update:', 'mt_trans_domain'),
-                 get_option(FBC_LAST_UPDATED_CACHE_OPTION));
+    get_option(FBC_LAST_UPDATED_CACHE_OPTION));
 
 ?>
 <hr />
 
 <p class="submit">
-<input type="submit" name="Submit" value="<?php _e('Update Options', 'mt_trans_domain' ) ?>" />
+<input type="submit" name="Submit" value="<?php _e('Update Options',
+'mt_trans_domain') ?>" />
 </p>
 
 </form>
@@ -380,13 +509,10 @@ function this_plugin_path() {
 
 function fbc_render_static_resource() {
   $plugin_dir = this_plugin_path() . '/';
-
-  $featureloader =
-    'http://static.ak.connect.facebook.com/js/api_lib/v0.4/FeatureLoader.js.php';
-
   return  <<<EOF
+ <div id="fb-root"></div>
 <link type="text/css" rel="stylesheet" href="$plugin_dir/fbconnect.css"></link>
-<script src="$featureloader" type="text/javascript"></script>
+ <script src="http://connect.facebook.net/en_US/all.js"></script>
 <script src="$plugin_dir/fbconnect.js" type="text/javascript"></script>
 EOF;
 
@@ -401,12 +527,12 @@ function fbc_register_init($app_config='reload') {
 
   $init = "FBConnect.init('%s', '%s', '%s', %d, FBConnect.appconfig_%s);";
   fbc_footer_register(sprintf($init,
-                              get_option(FBC_APP_KEY_OPTION),
-                              $plugin_dir,
-                              $site_url,
-                              $user->ID,
-                              $app_config),
-                      $prepend=true);
+    get_option(FBC_APP_ID_OPTION),
+    $plugin_dir,
+    $site_url . "/",
+    $user->ID,
+    $app_config),
+  $prepend=true);
 
 }
 
@@ -444,11 +570,11 @@ function fbc_footer() {
     Only render this if it hasn't already been done elsewhere.
    */
   if (FBC_USER_PROFILE_WINDOW &&
-      empty($GLOBALS['FBC_HAS_RENDERED_LOGIN_STATE'])) {
-    echo '<div class="fbc_loginstate_top">'.
-      fbc_render_login_state() .
-      '</div>';
-  }
+    empty($GLOBALS['FBC_HAS_RENDERED_LOGIN_STATE'])) {
+      echo '<div class="fbc_loginstate_top">'.
+        fbc_render_login_state() .
+        '</div>';
+    }
 
   echo _fbc_flush_footer_js();
 
@@ -458,7 +584,7 @@ function fbc_footer() {
 /*
  Generates the absolutely positioned box declaring who your are logged
  in as.
-*/
+ */
 function fbc_display_login_state() {
   echo fbc_render_login_state();
 }
@@ -472,8 +598,8 @@ function fbc_login_form() {
 
   if ($_GET['loggedout']) {
     /* Discussed in
-     http://wiki.developers.facebook.com/index.php/Authenticating_Users_on_Facebook
-   */
+  http://wiki.developers.facebook.com/index.php/Authenticating_Users_on_Facebook
+     */
     fbc_footer_register('FBConnect.logout();');
 
   }
@@ -506,16 +632,18 @@ function fbc_render_login_state() {
   }
 
   return sprintf('
-<div id="fbc_profile" class="fbc_profile_header">
-<div class="fbc_profile_pic">
-<fb:profile-pic uid="%d" facebook-logo="true" size="square"></fb:profile-pic>
-</div>
-Welcome, <fb:name uid="%d" capitalize="true" useyou="false"></fb:name>
-<br/>
-<a onclick="FBConnect.logout(); return false" href="#">Logout of Facebook</a>
-<div style="clear: both"></div>
-</div>
-', $fbuid, $fbuid);
+    <div id="fbc_profile" class="fbc_profile_header">
+    <div class="fbc_profile_pic">
+    <fb:profile-pic uid="%d" facebook-logo="true" size="square">
+    </fb:profile-pic>
+    </div>
+    Welcome, <fb:name uid="%d" capitalize="true" useyou="false"></fb:name>
+    <br/>
+    <a onclick="FBConnect.logout(); return false" href="#">
+    Logout of Facebook</a>
+    <div style="clear: both"></div>
+    </div>
+    ', $fbuid, $fbuid);
 }
 
 function fbc_comment_form_setup() {
@@ -533,7 +661,7 @@ function fbc_comment_form_setup() {
 
     $excerpt_len = 1024;
     if (strlen($excerpt) > $excerpt_len) {
-       $excerpt = substr($excerpt, 0, $excerpt_len) . "...";
+      $excerpt = substr($excerpt, 0, $excerpt_len) . "...";
     }
 
     fbc_set_js_var('excerpt', $excerpt);
@@ -550,7 +678,7 @@ function fbc_set_js_var($name, $value) {
 
 function fbc_display_login_button($hidden=false) {
   $user = wp_get_current_user();
-  if($user->ID) {
+  if ($user->ID) {
     // For the moment disallow connecting existing accounts
     return;
   }
@@ -565,7 +693,8 @@ function fbc_display_login_button($hidden=false) {
 
   $button = render_fbconnect_button();
   echo <<<EOF
-<div class="fbc_hide_on_login fbc_connect_button_area" $visibility  id="fbc_login">
+<div class="fbc_hide_on_login fbc_connect_button_area" $visibility
+id="fbc_login">
 <span><small>Connect with your Facebook Account</small></span> <br/> $button
 </div>
 
@@ -592,6 +721,24 @@ function fbc_get_fbuid($wpuid) {
   return ($fbc_uidcache[$wpuid] = $fbuid);
 }
 
+function fbc_get_status($wpid) {
+  $token = fbc_get_user_access_token($wpid);
+  if (strpos($token,'=') === false) {
+    $url = "https://graph.facebook.com/me/statuses?limit=1&access_token=$token";
+  } else {
+    $url = "https://graph.facebook.com/me/statuses?limit=1&$token";
+  }
+  try {
+    $response = file_get_contents($url);
+    $json = json_decode($response,true);
+    return $json['data'][0]['message'];
+  } catch(Exception $e) {
+    if (LOG_STATUS_FETCH_ERRORS) {
+      error_log('Failed to fetch user status: ' . $e->getMessage());
+    }
+    return null;
+  }
+}
 
 function fbc_get_avatar($avatar, $id_or_email, $size, $default) {
   if (!is_object($id_or_email)) {
@@ -610,7 +757,9 @@ function fbc_get_avatar($avatar, $id_or_email, $size, $default) {
  * have to.
  */
 function fbc_set_callback_url() {
-  $current_props = fbc_api_client()->admin_getAppProperties(array('connect_url'));
+  $current_props = fbc_anon_api_client()->api(array(
+    'method' => 'admin.getAppProperties',
+    'properties' => 'connect_url'));
   if (!empty($current_props['connect_url'])) {
     return;
   }
@@ -618,7 +767,8 @@ function fbc_set_callback_url() {
   $proto = !empty($_SERVER['HTTPS']) ? 'https://' : 'http://';
   $server_root =  $proto . $_SERVER['SERVER_NAME'];
   $properties = array('connect_url' => $server_root);
-  return fbc_api_client()->admin_setAppProperties($properties);
+  return fbc_anon_api_client()->api(array('method' => 'admin.setAppProperties',
+    'properties' => properties));
 }
 
 
@@ -640,8 +790,15 @@ function fbc_footer_register($js, $prepend=false) {
   }
 }
 
-
+/*
+ * Updates all Facebook User information in a batch. Only does anything if
+ * real-time updates are disabled and it has been over a day since the last
+ * batch update.
+ */
 function fbc_update_facebook_data($force=false) {
+  if (!$force && get_option(FBC_ENABLE_REALTIME_OPTION)) {
+    return;
+  }
   $last_cache_update = get_option(FBC_LAST_UPDATED_CACHE_OPTION);
   $delta = time() - $last_cache_update;
   if ($delta < 24*60*60 && !$force) {
@@ -649,10 +806,11 @@ function fbc_update_facebook_data($force=false) {
   }
 
   update_option(FBC_LAST_UPDATED_CACHE_OPTION,
-                time());
+    time());
 
   global $wpdb;
-  $sql = "SELECT user_id, meta_value FROM $wpdb->usermeta WHERE meta_key = 'fbuid'";
+  $sql = "SELECT user_id, meta_value FROM" .
+    " $wpdb->usermeta WHERE meta_key = 'fbuid'";
   $res = $wpdb->get_results($wpdb->prepare($sql), ARRAY_A);
   if (!$res) {
     return -1;
@@ -664,9 +822,9 @@ function fbc_update_facebook_data($force=false) {
   }
 
   try {
-    $userinfo = fbc_anon_api_client()->users_getInfo(
-      array_keys($fbuid_to_wpuid),
-      fbc_userinfo_keys());
+    $userinfo = fbc_anon_api_client()->api(array('method' => 'users.getInfo',
+      'uids' => implode(',', array_keys($fbuid_to_wpuid)),
+      'fields' => implode(',', array_keys(fbc_userinfo_keys()))));
 
   } catch(Exception $e) {
     return -1;
@@ -692,16 +850,27 @@ function fbc_tag_p() {
   return "<p>\n$inner</p>\n";
 }
 
-function fbc_tag_input($type, $name, $value=null, $size=null) {
+function fbc_tag_input($type, $name, $value=null, $size=null, $checked=false) {
 
   $vals = array("type" => $type,
-                "name" => $name);
+    "name" => $name);
+
   if ($value !== null) {
     $vals['value'] = $value;
   }
 
   if ($size !== null) {
     $vals['size'] = $size;
+  }
+
+  if ($checked) {
+    $vals['checked'] = 'checked';
+  }
+
+  if ($type == 'text') {
+    $vals['id'] = $name;
+  } else if ($type == 'radio') {
+    $vals['id'] = $name . $value;
   }
 
   $inner = '';
@@ -713,14 +882,82 @@ function fbc_tag_input($type, $name, $value=null, $size=null) {
 
 }
 
+function fbc_radio_button($name, $value, $checked = false) {
+  return fbc_tag_input('radio', $name, $value, null, $checked)
+    . '<label for="' . $name . $value . '">' . $value . '</label>';
+}
+
 function fbc_update_message($message) {
   return <<<EOF
 <div class="updated"><p><strong>$message</strong></p></div>
 EOF;
 }
 
+function fbc_user_profile_updated($wpid) {
+  if (isset($_POST['fb_showstatus_opt'])) {
+    if ($_POST['fb_showstatus_opt'] === 'Yes') {
+      update_usermeta($wpid,'fb_showstatus', '1');
+      update_usermeta($wpid,'fb_status', fbc_get_status($wpid));
+      $appid = get_option(FBC_APP_ID_OPTION);
+      $appsecret = get_option(FBC_APP_SECRET_OPTION);
+      $authpath = urlencode(this_plugin_path() . "/oauth.php?id=$wpid");
+      //oauth can trust the wpid because it's just used to determine which user
+      // to refresh, and the worst that someone can do is cause their own status
+      // to become stale.
+      wp_redirect("https://graph.facebook.com/oauth/authorize?client_id=$appid" .
+        "&redirect_uri=$authpath&scope=offline_access,read_stream");
+      exit;
+    }
+    else {
+      update_usermeta($wpid,'fb_showstatus', '0');
+      update_usermeta($wpid,'fb_status', ''); // remove existing status if
+      // we no longer need it.
+    }
+  }
+}
+
+function fbc_user_profile_extras($wpuser) {
+  if (get_option(FBC_ALLOW_USER_STATUS_OPTION) == 'true') {
+    $wpid = $wpuser->ID;
+    $showstatus_dbval = get_usermeta($wpid, 'fb_showstatus');
+    $showstatus = ($showstatus_dbval == '1');
+    echo '<h3>';
+    _e('Facebook options');
+    echo '</h3>';
+    echo '<table class="form-table"><tr><th>';
+    _e("Show your last Facebook status with your posts");
+    echo '</th><td>';
+    echo fbc_radio_button('fb_showstatus_opt', 'Yes', $showstatus) . '<br />';
+    echo fbc_radio_button('fb_showstatus_opt', 'No', !$showstatus) . '<br />';
+    echo '</td></table>';
+  }
+}
+
+function fbc_format_status($text, $wpid) {
+  $user = get_usermeta($wpid, 'first_name');
+  return '<div class="fbc_status_text"><p><em>Latest Facebook update from ' .
+    $user . ':</em></p><br>' . $text . '</div>';
+}
+
+function fbc_comment_render_footer($commenttext) {
+  global $comment;
+  $wpid = $comment -> user_id;
+  $statuspref = get_usermeta($wpid, 'fb_showstatus');
+  if ($statuspref != '1' || get_option(FBC_ALLOW_USER_STATUS_OPTION) != 'true') {
+    $footer = '';
+  } else {
+    $statustext = get_usermeta($wpid,'fb_status');
+    if (isset($statustext) && $statustext != "") {
+      $footer = fbc_format_status($statustext, $wpid);
+    } else {
+      $footer = '';
+    }
+  }
+  return $commenttext . $footer;
+}
+
+
 
 // start it up.
 fbc_init();
-
 

@@ -1,9 +1,9 @@
-=== WP-FacebookConnect ===
+=== WP-FacebookConnect-realtime ===
 Requires at least: 2.5
 Tested up to: 2.9.1
 Tags: comments, facebook
-Contributors: ahupp
-Stable Tag: 1.3.1
+Contributors: ahupp, ypisetsky
+Stable Tag: 2.0
 
 == Description ==
 
@@ -13,8 +13,18 @@ Facebook Connect APIs.  Features include:
  * Single-signon with your Facebook account
  * Publish comments to the newsfeed
  * Comment avatars display Facebook profile photos
+ * Displaying the user's most recent status (requires realtime updates
+     enabled)
 
 What's New:
+
+ 2.0:
+  - Allow the use of the Realtime Update API to update user names.
+  - Allow users to opt in to displaying their most recent Facebook
+  status along with their posts. This is only available if realtime
+  updates are enabled.
+  - Update to the new PHP SDK. This forces a change to using App ID instead
+    of API Key. See CHANGES for details.
 
  1.3
  - Add a "Like" button to posts

@@ -19,10 +19,11 @@ if (!class_exists('Facebook')) {
 }
 
 function _fbc_make_client() {
-  return new Facebook(get_option(FBC_APP_KEY_OPTION),
-                      get_option(FBC_APP_SECRET_OPTION),
-                      false,
-                      'connect.facebook.com');
+  return new Facebook(array(
+    'appId' => get_option(FBC_APP_ID_OPTION),
+    'secret' => get_option(FBC_APP_SECRET_OPTION),
+    'cookie' => true
+  ));
 }
 
 /*
@@ -36,20 +37,17 @@ function fbc_facebook_client() {
   return $facebook;
 }
 
-
-function fbc_api_client() {
-  return fbc_facebook_client()->api_client;
-}
-
-
 /**
   provides an api client without a user session.
-*/
+ */
 function fbc_anon_api_client() {
+  static $client = null;
+  if ($client != null) {
+    return $client;
+  }
   $client = _fbc_make_client();
-  $client->user = 0;
-  $client->api_client->session_key = null;
-  return $client->api_client;
+  $client->setSession(null);
+  return $client;
 }
 
 function fbc_get_displayname($userinfo) {
@@ -60,24 +58,6 @@ function fbc_get_displayname($userinfo) {
     return $userinfo['name'];
   }
 }
-
-function fbc_make_public_url($userinfo) {
-  if (empty($userinfo['name'])) {
-    // This user is hidden from search, so they dont get a url either
-    return null;
-  }
-
-  $fbuid = $userinfo['uid'];
-  $name = $userinfo['name'];
-  $under_name = str_replace(" ", "-", $name);
-
-  $clean_name = preg_replace('/[^A-Za-z0-9_\-]+/', '', $under_name);
-
-  $url = 'http://www.facebook.com/people/' . $clean_name . '/' . $fbuid;
-
-  return $url;
-}
-
 
 function render_fb_profile_pic($user) {
   return <<<EOF
@@ -96,7 +76,8 @@ function render_fbconnect_button($onlogin=null) {
   }
   return <<<EOF
 <div class="dark">
-  <fb:login-button size="large" background="white" length="short" $onlogin_str>
+  <fb:login-button perms="email,offline_access" size="large"
+background="white" length="short" $onlogin_str>
   </fb:login-button>
 </div>
 EOF;
@@ -118,7 +99,8 @@ define('FBC_ERROR_NO_FB_SESSION', -2);
 define('FBC_ERROR_USERNAME_EXISTS', -1);
 
 function fbc_login_if_necessary($allow_link=false) {
-  $fbuid = fbc_facebook_client()->get_loggedin_user();
+  $fbuid = fbc_facebook_client()->getUser();
+
   if ($fbuid) {
     $wpuid = fbc_fbuser_to_wpuser($fbuid);
     if (!$wpuid) {
@@ -161,32 +143,44 @@ function fbc_fbuser_to_wpuser($fbuid) {
 }
 
 function fbc_userinfo_to_wp_user($userinfo) {
-  return array(
+  $info = array(
     'display_name' => fbc_get_displayname($userinfo),
-    'user_url' => fbc_make_public_url($userinfo),
+    'user_url' => $userinfo['link'],
     'first_name' => $userinfo['first_name'],
     'last_name' => $userinfo['last_name'],
+    'user_email' => $userinfo['email']
   );
-
+  if (isset($userinfo['email']) {
+    $info['user_email'] = $userinfo['email'];
+  }
+  return $info;
 }
 
 function fbc_userinfo_keys() {
   return array('name',
-               'first_name',
-               'last_name',
-               'profile_url');
+    'first_name',
+    'last_name',
+    'link',
+    'email');
+}
+
+
+function fbc_get_user_access_token($wpid) {
+  $sessionStr = get_usermeta($wpid, 'fbsession');
+  if ($sessionStr[0] == 'a') {
+    return $sessionStr;
+  }
+  $session = json_decode($sessionStr,true);
+  return $session['access_token'];
 }
 
 function fbc_insert_user($fbuid) {
 
-  $userinfo = fbc_anon_api_client()->users_getInfo(array($fbuid),
-                                                   fbc_userinfo_keys());
-
+  $userinfo = fbc_facebook_client()->api($fbuid,'GET',
+                array('fields' => fbc_userinfo_keys()));
   if ($userinfo === null) {
     error_log('wp-fbconnect: empty query result for user ' . $fbuid);
   }
-
-  $userinfo = $userinfo[0];
 
   $fbusername = 'fb' . $fbuid;
   if (username_exists($fbusername)) {
@@ -219,4 +213,8 @@ function fbc_insert_user($fbuid) {
   return $wpuid;
 }
 
+function fbc_save_user_session($wpid, $session) {
+  $sessionStr = json_encode($session);
+  update_usermeta($wpid, 'fbsession', $sessionStr);
+}
 
